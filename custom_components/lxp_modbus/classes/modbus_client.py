@@ -89,7 +89,7 @@ class LxpModbusApiClient:
                     else:
                         hold_read_success = False # Mark as failed
 
-                writer.close()
+                await writer.close()
                 await writer.wait_closed()
             
             # Merge new data with the last known good data
@@ -134,7 +134,7 @@ class LxpModbusApiClient:
                         register, value, response_buf.hex() if response_buf else "None"
                     )
 
-                    writer.close()
+                    await writer.close()
                     await writer.wait_closed()
                     
                     # --- Response Validation ---

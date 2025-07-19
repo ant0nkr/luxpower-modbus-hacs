@@ -1,2 +1,5 @@
-homeassistant==2025.5.0
+homeassistant==2025.1.4
 pip>=21.3.1
+pytest-asyncio>=0.20.3
+pytest>=7.4.2
+pytest-mock>=3.10.0
