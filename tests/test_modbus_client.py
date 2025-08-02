@@ -18,7 +18,8 @@ def api_client():
         port=DUMMY_PORT,
         dongle_serial="DUMMY_DONGLE",
         inverter_serial="DUMMY00001",
-        lock=lock
+        lock=lock,
+        block_size=2
     )
 
 
@@ -36,25 +37,29 @@ def test_async_get_data_input_response(mock_response, mock_builder, mock_open_co
     writer.wait_closed = AsyncMock()
     mock_open_conn.return_value = (reader, writer)
     mock_builder.prepare_packet_for_read.return_value = b"request"
-    # Simulate valid response
-    response_instance = MagicMock()
-    response_instance.packet_error = False
-    response_instance.serial_number = "DUMMY00001".encode()
-    # Use unique values for each test
-    parsed_values = {i: i*10 for i in range(1, 3)}
-    response_instance.parsed_values_dictionary = parsed_values
-    mock_response.return_value = response_instance
+    # Simulate valid responses for input and hold
+    input_response = MagicMock()
+    input_response.packet_error = False
+    input_response.serial_number = api_client._inverter_serial.encode()
+    input_response.device_function = 4
+    input_response.parsed_values_dictionary = {i: i*10 for i in range(1, 3)}
+    hold_response = MagicMock()
+    hold_response.packet_error = False
+    hold_response.serial_number = api_client._inverter_serial.encode()
+    hold_response.device_function = 3
+    hold_response.parsed_values_dictionary = {i: i*10 for i in range(1, 3)}
+    mock_response.side_effect = [input_response, hold_response]
     input_bytes = bytes.fromhex(response_dict["response_hex"])
     reader.read = AsyncMock(side_effect=[input_bytes, input_bytes])
 
     with (
         patch("custom_components.lxp_modbus.classes.modbus_client.TOTAL_REGISTERS", 2),
-        patch("custom_components.lxp_modbus.classes.modbus_client.REGISTER_BLOCK_SIZE", 2),
         patch("custom_components.lxp_modbus.classes.modbus_client.RESPONSE_OVERHEAD", 0)
     ):
         result = asyncio.run(api_client.async_get_data())
-        assert result["input"] == parsed_values
-        assert result["hold"] == parsed_values
+        expected = {i: i*10 for i in range(1, 3)}
+        assert result["input"] == expected
+        assert result["hold"] == expected
 
 
 @pytest.mark.parametrize("response_key,response_dict", HOLD_RESPONSES.items())
@@ -69,21 +74,26 @@ def test_async_get_data_hold_response(mock_response, mock_builder, mock_open_con
     writer.wait_closed = AsyncMock()
     mock_open_conn.return_value = (reader, writer)
     mock_builder.prepare_packet_for_read.return_value = b"request"
-    # Simulate valid response
-    response_instance = MagicMock()
-    response_instance.packet_error = False
-    response_instance.serial_number = "DUMMY00001".encode()
-    parsed_values = {i: i*100 for i in range(1, 3)}
-    response_instance.parsed_values_dictionary = parsed_values
-    mock_response.return_value = response_instance
+    # Simulate valid responses for input and hold
+    input_response = MagicMock()
+    input_response.packet_error = False
+    input_response.serial_number = api_client._inverter_serial.encode()
+    input_response.device_function = 4
+    input_response.parsed_values_dictionary = {i: i*100 for i in range(1, 3)}
+    hold_response = MagicMock()
+    hold_response.packet_error = False
+    hold_response.serial_number = api_client._inverter_serial.encode()
+    hold_response.device_function = 3
+    hold_response.parsed_values_dictionary = {i: i*100 for i in range(1, 3)}
+    mock_response.side_effect = [input_response, hold_response]
     hold_bytes = bytes.fromhex(response_dict["response_hex"])
     reader.read = AsyncMock(side_effect=[hold_bytes, hold_bytes])
 
     with (
         patch("custom_components.lxp_modbus.classes.modbus_client.TOTAL_REGISTERS", 2),
-        patch("custom_components.lxp_modbus.classes.modbus_client.REGISTER_BLOCK_SIZE", 2),
         patch("custom_components.lxp_modbus.classes.modbus_client.RESPONSE_OVERHEAD", 0)
     ):
         result = asyncio.run(api_client.async_get_data())
-        assert result["input"] == parsed_values
-        assert result["hold"] == parsed_values
+        expected = {i: i*100 for i in range(1, 3)}
+        assert result["input"] == expected
+        assert result["hold"] == expected

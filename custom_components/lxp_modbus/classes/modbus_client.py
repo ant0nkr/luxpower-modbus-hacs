@@ -53,13 +53,14 @@ def _is_data_sane(registers: dict, register_type: str) -> bool:
 class LxpModbusApiClient:
     """A client for communicating with a LuxPower inverter."""
 
-    def __init__(self, host: str, port: int, dongle_serial: str, inverter_serial: str, lock: asyncio.Lock):
+    def __init__(self, host: str, port: int, dongle_serial: str, inverter_serial: str, lock: asyncio.Lock, block_size: int):
         """Initialize the API client."""
         self._host = host
         self._port = port
         self._dongle_serial = dongle_serial
         self._inverter_serial = inverter_serial
         self._lock = lock
+        self._block_size = block_size
         self._last_good_input_regs = {}
         self._last_good_hold_regs = {}
 
@@ -77,9 +78,9 @@ class LxpModbusApiClient:
                 input_read_success = True
                 hold_read_success = True
 
-                # Poll INPUT registers
-                for reg in range(0, TOTAL_REGISTERS, REGISTER_BLOCK_SIZE):
-                    count = min(REGISTER_BLOCK_SIZE, TOTAL_REGISTERS - reg)
+                # Poll INPUT registers (expecting function code 4)
+                for reg in range(0, TOTAL_REGISTERS, self._block_size):
+                    count = min(self._block_size, TOTAL_REGISTERS - reg)
                     req = LxpRequestBuilder.prepare_packet_for_read(self._dongle_serial.encode(), self._inverter_serial.encode(), reg, count, 4)
                     expected_length = RESPONSE_OVERHEAD + (count * 2)
                     writer.write(req)
@@ -97,16 +98,27 @@ class LxpModbusApiClient:
 
                     if response_buf and len(response_buf) > RESPONSE_OVERHEAD:
                         response = LxpResponse(response_buf)
-                        if not response.packet_error and response.serial_number == self._inverter_serial.encode() and _is_data_sane(response.parsed_values_dictionary, "input"):
-                                newly_polled_input_regs.update(response.parsed_values_dictionary)
+                        parsed_data = response.parsed_values_dictionary
+                        
+                        # Check if the packet is generally valid first
+                        if not response.packet_error and response.serial_number == self._inverter_serial.encode():
+                            # Now, check the ACTUAL function code in the response
+                            if response.device_function == 4 and _is_data_sane(parsed_data, "input"):
+                                newly_polled_input_regs.update(parsed_data)
+                            elif response.device_function == 3 and _is_data_sane(parsed_data, "hold"):
+                                _LOGGER.debug("Received HOLD data when expecting INPUT for regs %d-%d. Processing anyway.", reg, reg + count -1)
+                                newly_polled_hold_regs.update(parsed_data)
+                            else:
+                                # The response function code was neither 3 nor 4, or it failed the sanity check
+                                input_read_success = False
                         else:
-                            input_read_success = False # Mark as failed
+                            input_read_success = False
                     else:
-                        input_read_success = False # Mark as failed
+                        input_read_success = False
 
-                # Poll HOLD registers
-                for reg in range(0, TOTAL_REGISTERS, REGISTER_BLOCK_SIZE):
-                    count = min(REGISTER_BLOCK_SIZE, TOTAL_REGISTERS - reg)
+                # Poll HOLD registers (expecting function code 3)
+                for reg in range(0, TOTAL_REGISTERS, self._block_size):
+                    count = min(self._block_size, TOTAL_REGISTERS - reg)
                     req = LxpRequestBuilder.prepare_packet_for_read(self._dongle_serial.encode(), self._inverter_serial.encode(), reg, count, 3)
                     expected_length = RESPONSE_OVERHEAD + (count * 2)
                     writer.write(req)
@@ -124,17 +136,25 @@ class LxpModbusApiClient:
                     
                     if response_buf and len(response_buf) > RESPONSE_OVERHEAD:
                         response = LxpResponse(response_buf)
-                        if not response.packet_error and response.serial_number == self._inverter_serial.encode() and _is_data_sane(response.parsed_values_dictionary, "hold"):
-                            newly_polled_hold_regs.update(response.parsed_values_dictionary)
+                        parsed_data = response.parsed_values_dictionary
+                        
+                        if not response.packet_error and response.serial_number == self._inverter_serial.encode():
+                            if response.device_function == 3 and _is_data_sane(parsed_data, "hold"):
+                                newly_polled_hold_regs.update(parsed_data)
+                            elif response.device_function == 4 and _is_data_sane(parsed_data, "input"):
+                                _LOGGER.debug("Received INPUT data when expecting HOLD for regs %d-%d. Processing anyway.", reg, reg + count -1)
+                                newly_polled_input_regs.update(parsed_data)
+                            else:
+                                hold_read_success = False
                         else:
-                            hold_read_success = False # Mark as failed
+                            hold_read_success = False
                     else:
-                        hold_read_success = False # Mark as failed
+                        hold_read_success = False
 
                 writer.close()
                 await writer.wait_closed()
             
-            # Merge new data with the last known good data
+            # This logic remains exactly as you provided it
             if input_read_success:
                 self._last_good_input_regs = newly_polled_input_regs
             else:
@@ -145,7 +165,6 @@ class LxpModbusApiClient:
             else:
                 _LOGGER.warning("Hold poll failed; retaining previous hold register data.")
 
-            # Always return a complete (though possibly stale) dataset
             return {"input": self._last_good_input_regs, "hold": self._last_good_hold_regs}
 
         except Exception as ex:
