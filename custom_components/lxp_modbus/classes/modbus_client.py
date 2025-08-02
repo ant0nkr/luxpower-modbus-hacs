@@ -99,22 +99,15 @@ class LxpModbusApiClient:
                     if response_buf and len(response_buf) > RESPONSE_OVERHEAD:
                         response = LxpResponse(response_buf)
                         
-                        # Check if the packet is generally valid first
-                        if not response.packet_error and response.serial_number == self._inverter_serial.encode():
-                            parsed_data = response.parsed_values_dictionary
-                            # Now, check the ACTUAL function code in the response
-                            if response.device_function == 4 and _is_data_sane(parsed_data, "input"):
-                                newly_polled_input_regs.update(parsed_data)
-                            elif response.device_function == 3 and _is_data_sane(parsed_data, "hold"):
-                                _LOGGER.debug("Received HOLD data when expecting INPUT for regs %d-%d. Processing anyway.", reg, reg + count -1)
-                                newly_polled_hold_regs.update(parsed_data)
-                            else:
-                                # The response function code was neither 3 nor 4, or it failed the sanity check
-                                input_read_success = False
+                    if response_buf and len(response_buf) > RESPONSE_OVERHEAD:
+                        response = LxpResponse(response_buf)
+                        if not response.packet_error and response.serial_number == self._inverter_serial.encode() and _is_data_sane(response.parsed_values_dictionary, "input"):
+                                newly_polled_input_regs.update(response.parsed_values_dictionary)
                         else:
-                            input_read_success = False
+                            input_read_success = False # Mark as failed
                     else:
-                        input_read_success = False
+                        input_read_success = False # Mark as failed
+
 
                 # Poll HOLD registers (expecting function code 3)
                 for reg in range(0, TOTAL_REGISTERS, self._block_size):
@@ -136,21 +129,12 @@ class LxpModbusApiClient:
                     
                     if response_buf and len(response_buf) > RESPONSE_OVERHEAD:
                         response = LxpResponse(response_buf)
-                        
-                        if not response.packet_error and response.serial_number == self._inverter_serial.encode():
-                            parsed_data = response.parsed_values_dictionary
-                            
-                            if response.device_function == 3 and _is_data_sane(parsed_data, "hold"):
-                                newly_polled_hold_regs.update(parsed_data)
-                            elif response.device_function == 4 and _is_data_sane(parsed_data, "input"):
-                                _LOGGER.debug("Received INPUT data when expecting HOLD for regs %d-%d. Processing anyway.", reg, reg + count -1)
-                                newly_polled_input_regs.update(parsed_data)
-                            else:
-                                hold_read_success = False
+                        if not response.packet_error and response.serial_number == self._inverter_serial.encode() and _is_data_sane(response.parsed_values_dictionary, "hold"):
+                            newly_polled_hold_regs.update(response.parsed_values_dictionary)
                         else:
-                            hold_read_success = False
+                            hold_read_success = False # Mark as failed
                     else:
-                        hold_read_success = False
+                        hold_read_success = False # Mark as failed
 
                 writer.close()
                 await writer.wait_closed()

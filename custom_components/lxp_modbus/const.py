@@ -31,7 +31,7 @@ DEFAULT_RATED_POWER = 5000
 DEFAULT_READ_ONLY = False
 DEFAULT_PORT = 8000
 
-DEFAULT_REGISTER_BLOCK_SIZE = 40 # Default to the safe value for older firmware
+DEFAULT_REGISTER_BLOCK_SIZE = 127 # Default to the safe value for older firmware
 TOTAL_REGISTERS = 250
 RESPONSE_OVERHEAD: Final = 37 # minimum resposne length received from inverter (technical information)
 MAX_RETRIES = 3
