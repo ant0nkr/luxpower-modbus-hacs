@@ -98,10 +98,10 @@ class LxpModbusApiClient:
 
                     if response_buf and len(response_buf) > RESPONSE_OVERHEAD:
                         response = LxpResponse(response_buf)
-                        parsed_data = response.parsed_values_dictionary
                         
                         # Check if the packet is generally valid first
                         if not response.packet_error and response.serial_number == self._inverter_serial.encode():
+                            parsed_data = response.parsed_values_dictionary
                             # Now, check the ACTUAL function code in the response
                             if response.device_function == 4 and _is_data_sane(parsed_data, "input"):
                                 newly_polled_input_regs.update(parsed_data)
@@ -136,9 +136,10 @@ class LxpModbusApiClient:
                     
                     if response_buf and len(response_buf) > RESPONSE_OVERHEAD:
                         response = LxpResponse(response_buf)
-                        parsed_data = response.parsed_values_dictionary
                         
                         if not response.packet_error and response.serial_number == self._inverter_serial.encode():
+                            parsed_data = response.parsed_values_dictionary
+                            
                             if response.device_function == 3 and _is_data_sane(parsed_data, "hold"):
                                 newly_polled_hold_regs.update(parsed_data)
                             elif response.device_function == 4 and _is_data_sane(parsed_data, "input"):
